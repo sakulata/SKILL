@@ -1,0 +1,31 @@
+# Git 忽略配置
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Node.js
+node_modules/
+*.log
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# 备份
+*.bak
+*.orig
+
+# 工作目录
+inject_*.py
+!scripts/inject_bridge.py
+!scripts/inject_bridge2.py
