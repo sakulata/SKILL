@@ -1,95 +1,92 @@
-# workbuddy-bridge 技能
+# WorkBuddy 网络控制桥接
 
-## 概述
+> **让 WorkBuddy 拥有远程控制能力——通过网页随时随地唤醒 AI 对话**
 
-本技能用于将 WorkBuddy 的 genie 扩展（腾讯 AI 助手）中的 `chat.sendMessage` 命令通过桥接扩展 HTTP API 暴露出来，供外部程序调用，实现全自动 AI 对话。
+## 一句话说明
 
-## 工作流程
+本技能为 WorkBuddy 打通 HTTP 接口，使外部网页或程序可以远程发送指令、触发 AI 对话、获取回答，实现真正的**网络化 AI 控制**。
+
+## 核心能力
+
+- 🌐 **远程唤醒**：通过 HTTP 请求唤醒 WorkBuddy，无需打开软件界面
+- 🔌 **标准化 API**：提供 REST 接口，任何支持 HTTP 的平台均可调用
+- 🤖 **全自动对话**：发送消息后自动等待 AI 处理完成，无需人工干预
+- 🔒 **本地优先**：所有请求仅在本机 18080 端口响应，安全可靠
+
+## 工作原理
 
 ```
-注入 genie index.js（注册缺失命令）
-    ↓
-桥接扩展 HTTP 服务启动（端口 18080）
-    ↓
-外部请求 → /execute 端点
-    ↓
-调用 VSCode 命令 → genie 扩展处理
-    ↓
-返回 AI 回答
+[你的网页/程序]
+    ↓ HTTP POST :18080/execute
+[桥接服务] → [VSCode 命令系统] → [genie AI 扩展] → [AI 处理]
+    ↓ HTTP JSON 响应
+[返回 AI 回答]
 ```
 
-## 环境要求
+## 快速开始
 
-- Windows x64
-- Python 3.10+
-- 已安装 WorkBuddy（路径：`C:\Users\Administrator\AppData\Local\Programs\WorkBuddy\`）
-- Git（用于上传）
-
-## 一、注入命令（注入 genie 扩展）
-
-### 第一步：注入
+### 第一步：安装桥接（一次性操作）
 
 ```powershell
-C:\Python314\python.exe C:\Users\Administrator\.qclaw\workspace\inject_bridge.py
+python D:\SKILL\scripts\inject_bridge.py
 ```
-
-**预期输出**：`Diff: 737 bytes (expected ~737)`
 
 ### 第二步：重启 WorkBuddy
 
 ```powershell
-Stop-Process -Name WorkBuddy -Force -ErrorAction SilentlyContinue; Start-Process WorkBuddy.exe; Start-Sleep -Seconds 5
+Stop-Process -Name WorkBuddy -Force -ErrorAction SilentlyContinue
+Start-Process WorkBuddy.exe
+Start-Sleep -Seconds 5
 ```
 
-### 第三步：验证注入
+### 第三步：发送测试请求
 
 ```powershell
-# 检查端口
-Test-NetConnection -ComputerName 127.0.0.1 -Port 18080
-
-# 测试命令
 $body = @{
     command = "tencentcloud.codingcopilot.chat.sendMessage"
-    message = "1+1等于几？"
+    message = "你好，介绍一下你自己"
     options = @{
         headless = $true
         waitForCompletion = $true
-        timeout = 120000
+        timeout = 60000
     }
 } | ConvertTo-Json -Compress
 
-$r = Invoke-RestMethod -Uri 'http://127.0.0.1:18080/execute' -Method POST -ContentType 'application/json' -Body $body -TimeoutSec 130
+$r = Invoke-RestMethod -Uri 'http://127.0.0.1:18080/execute' -Method POST -ContentType 'application/json' -Body $body
 $r.completion.messages[-1].content
 ```
 
-## 二、可用命令
+## API 文档
 
-| 命令 ID | 功能 | 参数 |
-|--------|------|------|
-| `tencentcloud.codingcopilot.chat.sendMessage` | 全自动发送，返回 AI 回答 | message + options |
-| `tencentcloud.codingcopilot.sendToChat` | 新建对话+发送 | message + options |
+### 基础信息
 
-## 三、API 端点
+| 项目 | 值 |
+|------|-----|
+| 协议 | HTTP |
+| 端口 | 18080 |
+| 地址 | `127.0.0.1:18080` |
+| 格式 | JSON |
 
-桥接扩展运行在端口 **18080**：
+### 端点列表
 
-| 端点 | 方法 | 功能 |
+| 端点 | 方法 | 说明 |
 |------|------|------|
-| `/status` | GET | 服务状态 |
-| `/check` | GET | 检查 WorkBuddy 运行状态 |
-| `/execute` | POST | 执行 VSCode 命令 |
-| `/all-commands` | GET | 所有命令列表 |
-| `/commands` | GET | 过滤命令列表 |
+| `/status` | GET | 查询桥接服务运行状态 |
+| `/check` | GET | 检查 WorkBuddy 是否在运行 |
+| `/execute` | POST | 发送命令给 WorkBuddy |
+| `/all-commands` | GET | 获取所有可用命令 |
 
-### /execute 请求格式
+### 执行命令（核心）
 
-```json
+**请求**
+
+```http
 POST http://127.0.0.1:18080/execute
 Content-Type: application/json
 
 {
   "command": "tencentcloud.codingcopilot.chat.sendMessage",
-  "message": "用户消息",
+  "message": "你的问题",
   "options": {
     "headless": true,
     "waitForCompletion": true,
@@ -98,83 +95,111 @@ Content-Type: application/json
 }
 ```
 
-### /execute 响应格式
+**响应**
 
 ```json
 {
-  "id": "session_id",
-  "message": { "content": "用户消息" },
-  "state": { "agentStatus": "running|completed" },
+  "id": "session_xxx",
   "completion": {
     "success": true,
     "state": "completed",
     "messages": [
-      { "role": "assistant", "content": "{\"text\":\"AI回答\"}" }
+      {
+        "role": "assistant",
+        "content": "AI 的回答内容"
+      }
     ]
   }
 }
 ```
 
-## 四、重置（恢复原始状态）
+### 查询状态
 
-如需恢复 genie index.js 到原始状态，运行：
-
-```powershell
-C:\Python314\python.exe D:\SKILL\scripts\inject_bridge2.py
+```http
+GET http://127.0.0.1:18080/status
 ```
 
-此脚本会从 WorkBuddy 自带的 `resources\app\extensions\genie\out\extension\index.js.bak` 备份文件恢复。
+```json
+{
+  "status": "running",
+  "port": 18080,
+  "workbuddy": true,
+  "timestamp": "2026-05-02T10:00:00.000Z"
+}
+```
 
-## 五、文件位置
+## 应用场景
 
-| 文件 | 路径 |
+### 场景 1：网页控制台
+
+通过自定义网页发送指令到 WorkBuddy，实时显示 AI 回答。
+
+```
+用户网页 → http://127.0.0.1:18080/execute → WorkBuddy AI
+     ↑                                            ↓
+     └───────────── 展示回答 ←────────────────────┘
+```
+
+### 场景 2：自动化脚本
+
+在 Python、Shell 中调用 WorkBuddy AI，无需启动 GUI。
+
+```python
+import requests
+
+response = requests.post(
+    'http://127.0.0.1:18080/execute',
+    json={
+        'command': 'tencentcloud.codingcopilot.chat.sendMessage',
+        'message': '帮我写一个求和函数',
+        'options': {'headless': True, 'waitForCompletion': True, 'timeout': 60000}
+    }
+)
+
+result = response.json()
+print(result['completion']['messages'][-1]['content'])
+```
+
+### 场景 3：远程唤醒
+
+配合内网穿透工具（如 frp），在任意设备上控制本地 WorkBuddy AI。
+
+## 完整文件结构
+
+```
+D:\SKILL\
+├── SKILL.md              # 本文件
+├── README.md             # 英文简介
+├── .gitignore            # Git 忽略配置
+├── scripts/              # 脚本目录
+│   ├── inject_bridge.py  # 注入脚本（单次注入约 737 字节）
+│   ├── inject_bridge2.py # 完整注入（含恢复）版本
+│   ├── bridge-service.js # Node.js 独立服务
+│   └── test_bridge.ps1   # 测试脚本
+└── docs/                 # 文档目录
+    ├── tech-details.md   # 技术细节
+    └── debug-guide.md    # 调试指南
+```
+
+## 常见问题
+
+| 问题 | 解答 |
 |------|------|
-| genie index.js | `C:\Users\Administrator\AppData\Local\Programs\WorkBuddy\_\resources\app\extensions\genie\out\extension\index.js` |
-| product.json | `C:\Users\Administrator\AppData\Local\Programs\WorkBuddy\_\resources\app\product.json` |
-| 原始备份 | `C:\Users\Administrator\AppData\Local\Programs\WorkBuddy\resources\app\extensions\genie\out\extension\index.js.bak` |
+| 端口 18080 被占用？ | 关闭其他占用程序或修改 `bridge-service.js` 中的 PORT |
+| 提示"权限不足"？ | 确保 sakulata 账户有仓库写入权限 |
+| 推送超时？ | 检查网络代理设置，确保 443 端口可访问 GitHub |
+| 注入后 WorkBuddy 崩溃？ | 运行 `inject_bridge2.py` 从备份恢复 |
 
-## 六、调试
+## 技术栈
 
-```powershell
-# 查看日志文件
-$logFile = Get-ChildItem 'C:\Users\Administrator\AppData\Roaming\WorkBuddy\logs\' -Recurse -Filter 'WorkBuddy.log' | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-Select-String -Path $logFile.FullName -Pattern 'Bridge|chat.sendMessage'
+| 组件 | 技术 |
+|------|------|
+| 注入工具 | Python 3.10+ |
+| 桥接服务 | Node.js HTTP Server |
+| 测试脚本 | PowerShell |
+| AI 对话 | WorkBuddy genie 扩展 |
+| 版本控制 | Git + GitHub |
 
-# 检查命令是否注册
-Invoke-WebRequest -Uri 'http://127.0.0.1:18080/all-commands' | ConvertFrom-Json
+---
 
-# 检查 WorkBuddy 状态
-Invoke-WebRequest -Uri 'http://127.0.0.1:18080/check' | ConvertFrom-Json
-```
-
-## 七、常见问题
-
-| 问题 | 原因 | 解决方案 |
-|------|------|----------|
-| Diff 为负数 | 目标字符串位置不对 | 检查 `}(ir)},ar.deactivate` 是否精确匹配 |
-| 端口无响应 | bridge 扩展未加载 | 检查 product.json 是否添加了桥接扩展 |
-| 超时 | AI 处理时间过长 | 增加 timeout 参数，最大 300000ms |
-| Extension Host 崩溃 | 使用了 setTimeout | 注入代码必须同步执行，不能用 setTimeout |
-
-## 八、架构图
-
-```
-┌─────────────────────────────────────────────┐
-│  外部程序 (Python/Curl/API)                  │
-└──────────────┬──────────────────────────────┘
-               │ HTTP POST :18080/execute
-               ▼
-┌──────────────────────────────────────────────┐
-│  bridge 扩展 (workbuddy-bridge)              │
-│  - HTTP Server (Node.js)                    │
-│  - 注册 VSCode 命令                          │
-└──────────┬───────────────────────────────────┘
-            │ VSCode 命令调用
-            ▼
-┌──────────────────────────────────────────────┐
-│  genie 扩展 (注入后)                         │
-│  - CommandRegistry.activate()                │
-│  - chat.sendMessage 命令                     │
-│  - AI 模型调用                               │
-└──────────────────────────────────────────────┘
-```
+**远程控制，一触即达**

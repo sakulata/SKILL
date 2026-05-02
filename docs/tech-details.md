@@ -1,17 +1,15 @@
-# WorkBuddy Bridge 技术细节
+# WorkBuddy Web Control Bridge — Technical Details
 
-## 核心问题
+## Problem Statement
 
-genie 扩展的 `CommandRegistry` 类在注册命令时，由于混淆代码中变量 shadow 问题，
-导致 `chat.sendMessage` 和 `sendToChat` 命令无法正确注册到 VSCode 命令系统。
+The genie extension's `CommandRegistry` class fails to register `chat.sendMessage` and `sendToChat` commands due to variable shadowing in the minified/obfuscated code.
 
-## 解决方案：手动注册
+## Solution: Manual Registration
 
-在 `CommandRegistry.activate()` 方法的 `doActivate` 函数末尾，在 `ar` 变量被清理前，
-手动注册缺失的命令：
+Inject code at the end of `CommandRegistry.activate()`'s `doActivate` function, before `ar` variable goes out of scope:
 
 ```javascript
-// 在 IIFE 内部执行，此时 ar 仍然是命令数组
+// Extract handler while ar is still the command array
 const _cmd = ar.find(c => {
     try {
         const ids = typeof c.id === 'string' ? [c.id] : c.id;
@@ -27,119 +25,107 @@ if (_cmd) {
 }
 ```
 
-## 关键变量分析
+## Variable Shadow Analysis
 
 ```javascript
 class CommandRegistry {
     activate() {
-        // ar 是命令数组（来自 this.commandProvider.get()）
         const ir = new Map();
-        const ar = this.commandProvider.get();
-        
-        this.logger.info(`[CommandRegistry] Total commands: ${ar.length}`);
+        const ar = this.commandProvider.get();  // ar = command array
         
         for (const tn of ar) {
-            // ⚠️ 在循环内，ar 被 shadow 成 ID 数组
-            // 循环结束后 ar 不再是命令数组
-            const ar = tn.ids; // shadow！
+            const ar = tn.ids;  // ⚠️ shadow! ar is now ID array
         }
-        
-        // 此时 ar 已被 shadow，原命令数组丢失
-        // 所以注入必须在 for 循环之前执行
+        // ar is shadowed, original command array lost
+        // → injection must happen BEFORE this loop
     }
 }
 ```
 
-## 注入点分析
+## Injection Points
 
-### 注入点 1：for 循环之前
+### Point 1: Before for-loop
 
 ```javascript
-// 原代码
+// Before
 for(const tn of ar)
 
-// 注入后
+// After injection
 const _chatMsgHandler=ar.find(...);
 const _sendToChatHandler=ar.find(...);
 for(const tn of ar)
 ```
 
-### 注入点 2：注册成功日志之后
+### Point 2: After successful registration
 
 ```javascript
-// 原代码
+// Before
 this.logger.info("[CommandRegistry] All commands registered successfully")
 
-// 注入后
+// After
 this.logger.info("[CommandRegistry] All commands registered successfully");
 if(_chatMsgHandler){...}
 if(_sendToChatHandler){...}
 ```
 
-## 命令 ID 映射
+## Command ID Mapping
 
-| 内部 ID | 注册后的命令 ID |
-|---------|----------------|
+| Internal ID | Registered Command ID |
+|-------------|----------------------|
 | `chat.sendMessage` | `tencentcloud.codingcopilot.chat.sendMessage` |
 | `sendToChat` | `tencentcloud.codingcopilot.sendToChat` |
-| `addToChat` | `tencentcloud.codingcopilot.addToChat`（无需注入，可用） |
+| `addToChat` | `tencentcloud.codingcopilot.addToChat` (no injection needed) |
 
-## 注入差值
+## Extension Host Limitations
 
-- inject_bridge.py（单点注入）：约 737 字节
-- inject_bridge2.py（双点注入）：约 1000+ 字节
+WorkBuddy is based on VSCode Code 1.77.3. Its Extension Host environment:
 
-## 扩展 Host 崩溃原因
+- ✅ Has basic event loop (`require('events')`)
+- ❌ **No** `setTimeout` / `setImmediate` / `process.nextTick`
+- ❌ No Promise-based async scheduling
 
-WorkBuddy 基于 VSCode Code 1.77.3，其 Extension Host 是修改过的 Node.js 环境：
-- 有事件循环基础（require('events')）
-- **不支持** `setTimeout` / `setImmediate` / `process.nextTick`
-- 不支持 Promise 异步延迟
+Using async scheduling causes Extension Host crash. **All injection code must be synchronous.**
 
-任何使用异步调度的代码都会导致 Extension Host 进程崩溃。
+## DI Container
 
-## DI 容器机制
-
-genie 扩展使用自定义 DI 容器：
+genie uses a custom DI container:
 
 ```javascript
-// 装饰器
-@Component(Command)      // 注册到容器
-@Autowired               // 注入依赖
-@AutowiredProvider(Command)  // 获取所有 Command 实例
+@Component(Command)      // Register to container
+@Autowired               // Inject dependency
+@AutowiredProvider(Command)  // Get all instances
 
-// 获取实例
 ContainerUtil.get(SomeClass)
 ContainerUtil.getAllInstances(SomeClass)
 ```
 
-## 命令参数格式
+## Command Parameter Format
 
 ```javascript
 {
-    message: string,          // 用户消息
+    message: string,
     options: {
-        headless: boolean,     // 无 UI 模式
-        waitForCompletion: boolean,  // 等待 AI 完成
-        timeout: number        // 超时毫秒
+        headless: boolean,
+        waitForCompletion: boolean,
+        timeout: number  // milliseconds
     }
 }
 ```
 
-## 返回数据流
+## Data Flow
 
 ```
 HTTP POST /execute
     ↓
-bridge 扩展接收请求
+bridge extension receives request
     ↓
 vscode.commands.executeCommand('tencentcloud.codingcopilot.chat.sendMessage', args)
     ↓
-CommandRegistry 执行 handler（调用 genie AI）
+CommandRegistry executes handler (calls genie AI)
     ↓
-AI 处理并返回 completion 事件
+AI processes and returns completion event
     ↓
-bridge 解析 completion.messages
+bridge parses completion.messages
     ↓
-HTTP 响应 JSON
+HTTP JSON response
 ```

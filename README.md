@@ -1,56 +1,51 @@
-# WorkBuddy Bridge
+# WorkBuddy Web Control Bridge
 
-通过注入 genie 扩展，手动注册 `chat.sendMessage` 命令，实现全自动 AI 对话的桥接技能。
+> **Connect your WorkBuddy to the web — remote AI control at your fingertips**
 
-## 功能
+## What It Does
 
-- 向 genie 扩展注入代码，注册缺失的 VSCode 命令
-- 提供 HTTP API（端口 18080）供外部调用
-- 支持全自动发送消息并获取 AI 回答
+Exposes WorkBuddy's AI capabilities via HTTP API, enabling remote control through any web interface or program.
 
-## 快速开始
-
-### 1. 注入命令
+## Quick Start
 
 ```powershell
-python scripts/inject_bridge.py
+# 1. Inject (one-time)
+python D:\SKILL\scripts\inject_bridge.py
+
+# 2. Restart WorkBuddy
+Stop-Process -Name WorkBuddy -Force
+Start-Process WorkBuddy.exe
+
+# 3. Send a message
+$body = @{
+    command = "tencentcloud.codingcopilot.chat.sendMessage"
+    message = "Hello"
+    options = @{headless=$true; waitForCompletion=$true; timeout=60000}
+} | ConvertTo-Json -Compress
+
+Invoke-RestMethod -Uri 'http://127.0.0.1:18080/execute' -Method POST -ContentType 'application/json' -Body $body
 ```
 
-### 2. 重启 WorkBuddy
+## API
 
-```powershell
-Stop-Process -Name WorkBuddy -Force; Start-Process WorkBuddy.exe; Start-Sleep -Seconds 5
-```
+- `GET /status` — Service status
+- `POST /execute` — Send command
 
-### 3. 测试
-
-```powershell
-powershell scripts/test_bridge.ps1
-```
-
-## 文件说明
+## Files
 
 ```
-SKILL/                    # 技能根目录
-├── SKILL.md              # 主技能文件
-├── README.md             # 本文件
-├── .gitignore            # Git 忽略配置
-├── scripts/              # 脚本目录
-│   ├── inject_bridge.py # 注入脚本（单点注入，~737字节）
-│   ├── inject_bridge2.py# 注入脚本（双点注入+恢复）
-│   ├── bridge-service.js# 独立 HTTP 服务（Node.js）
-│   └── test_bridge.ps1  # 测试脚本
-└── docs/                # 文档目录
-    ├── tech-details.md  # 技术细节
-    └── debug-guide.md   # 调试指南
+D:\SKILL\
+├── SKILL.md              # Main documentation
+├── README.md             # This file
+├── scripts/
+│   ├── inject_bridge.py  # Injection script
+│   ├── inject_bridge2.py  # Full version with restore
+│   ├── bridge-service.js # HTTP service
+│   └── test_bridge.ps1   # Test script
+└── docs/
+    ├── tech-details.md   # Technical details
+    └── debug-guide.md     # Debug guide
 ```
-
-## 技术栈
-
-- Python 3.10+（注入脚本）
-- Node.js（HTTP 服务）
-- PowerShell（测试脚本）
-- VSCode Extension API（命令调用）
 
 ## License
 
